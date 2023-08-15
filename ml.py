@@ -198,6 +198,7 @@ def balance_weights(y_train, params):
 def generate_train_and_test_sets(df, target_column, target_column_name, event_level, column_type, override,
                                  case_id_name, df_completed_cases, activity_name):
     # reattach predict column before splitting
+    print('df',df)
     df[target_column_name] = target_column
     df.columns = df.columns.str.replace('time_from_midnight', 'daytime')
     # around 2/3 cases are the training set, 1/3 is the test set
@@ -266,6 +267,10 @@ def generate_train_and_test_sets(df, target_column, target_column_name, event_le
     dfValid = df[df[case_id_name].isin(valid_cases)]
     dfTrain_without_valid = df[df[case_id_name].isin(train_cases) & ~df[case_id_name].isin(valid_cases)]
     dfTrain = dfTrain_without_valid.append(dfValid, ignore_index=True)
+    dfTrain = pd.read_csv(r'C:\Users\19wuj\PycharmProjects\CoDi\tabular_datasets\diffu\PurchasingExample_0.2\resource_evaluation\resource_train_sample.csv')
+    dfTest = pd.read_csv(r'C:\Users\19wuj\PycharmProjects\CoDi\tabular_datasets\diffu\PurchasingExample_0.2\resource_evaluation\resource_test.csv')
+    print('train',dfTrain)
+    print('test',dfTest)
 
     # if unbalanced: #leave this if you want to balance the num of the targets
     #     #at this point you can balance the number of the targets

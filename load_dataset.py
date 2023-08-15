@@ -530,7 +530,6 @@ def prepare_dataset(df, case_id_name, activity_column_name, start_date_name, dat
         histogram_median_events_per_dataset(df, case_id_name, activity_column_name, start_date_name,
                                             end_date_name)
     df = prepare_data_and_add_features(df, case_id_name, start_date_name, date_format, end_date_name)
-
     if "activity_duration" in df.columns:
         df_completed_cases = df.groupby(case_id_name).agg("last")[
             [activity_column_name, "time_from_start", "activity_duration"]].reset_index()
@@ -698,7 +697,9 @@ def prepare_dataset(df, case_id_name, activity_column_name, start_date_name, dat
                         df.drop(pred_attributes, axis=1, inplace=True)
                     target_column = pd.concat([target_column, df["remaining_time"]], axis=1)
             print("Calculated target column")
+
         elif pred_column == 'remaining_time' and mode == "train":
+            print('df', df.shape)
             column_type = 'Numeric'
             if use_remaining_for_num_targets:
                 event_level = 1
@@ -714,8 +715,8 @@ def prepare_dataset(df, case_id_name, activity_column_name, start_date_name, dat
                 target_column_name = 'lead_time'
 
             # remove rows where remaining_time=0
-            df = df[df.loc[:, 'remaining_time'] != 0].reset_index(drop=True)
-
+            # df = df[df.loc[:, 'remaining_time'] != 0].reset_index(drop=True)
+            print('df', df.shape)
             if use_remaining_for_num_targets:
                 target_column = df.loc[:, 'remaining_time'].reset_index(drop=True)
             else:
