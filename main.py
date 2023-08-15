@@ -79,7 +79,8 @@ parser = argparse.ArgumentParser(
 
 #TODO : Nota che ho aggiunto il default a --case_id_name, --activity_name, --start_date_name per passarli al debugger
 
-parser.add_argument('--filename_completed', default='data/completed.csv')
+parser.add_argument('--filename_train', default='data/completed.csv')
+parser.add_argument('--filename_test', default='data/completed.csv')
 parser.add_argument('--filename_running', default=None)
 parser.add_argument('--case_id_name', default='REQUEST_ID', type=str)
 parser.add_argument('--activity_name', default='ACTIVITY', type=str)
@@ -107,7 +108,8 @@ parser.add_argument('--outlier_thrs', default=0, type=int)
 args = parser.parse_args()
 
 # mandatory parameters
-filename = args.filename_completed
+filename_train = args.filename_train
+filename_test = args.filename_test
 filename_running = args.filename_running
 case_id_name = args.case_id_name
 activity_name = args.activity_name
@@ -138,10 +140,15 @@ num_epochs = args.num_epochs
 outlier_thrs = args.outlier_thrs
 # predictor= args.predictor
 
-convert_to_csv(filename)
-filename = modify_filename(filename)
-df = read_data(filename, args.start_date_name, args.date_format)
-print(df.shape)
+convert_to_csv(filename_train)
+convert_to_csv(filename_test)
+filename_train = modify_filename(filename_train)
+filename_test = modify_filename(filename_test)
+df_train = read_data(filename_train, args.start_date_name, args.date_format)
+df_test = read_data(filename_test, args.start_date_name, args.date_format)
+# Append "_test" suffix to caseid values in df_test
+df_test['caseid'] = df_test['caseid'] + "_test"
+df = pd.concat([df_train, df_test], ignore_index=True)
 if filename_running is not None:
     df_running = read_data(filename_running, args.start_date_name, args.date_format)
     print(df_running.shape)

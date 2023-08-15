@@ -24,7 +24,7 @@ import pickle
 
 
 @log_it
-def save_column_information_for_real_predictions(dfTrain, dfTrain_without_valid, dfTest, dfValid, train_cases,
+def save_column_information_for_real_predictions(dfTrain, dfTest,
                                                  event_level, target_column_name, column_type, categorical_features,
                                                  activity_name):
     # save columns info to be later retrieved when predicting real data
@@ -33,10 +33,6 @@ def save_column_information_for_real_predictions(dfTrain, dfTrain_without_valid,
 
     info = read(folders['model']['data_info'])
 
-    if type(train_cases) == np.ndarray:
-        info["train_cases"] = train_cases.tolist()
-    else:
-        info["train_cases"] = train_cases
     info['columns'] = dfTrain.iloc[:, 1:-1].columns.to_list()
     df_types = dfTrain.dtypes.to_frame('dtypes').reset_index()
     info["column_types"] = df_types.set_index('index')['dtypes'].astype(str).to_dict()
@@ -49,13 +45,9 @@ def save_column_information_for_real_predictions(dfTrain, dfTrain_without_valid,
     info["column_type"] = column_type
     info["categorical_features"] = categorical_features.to_list()
     dfTrain = utils.change_history(dfTrain, activity_name)
-    dfTrain_without_valid = utils.change_history(dfTrain_without_valid, activity_name)
-    dfValid = utils.change_history(dfValid, activity_name)
     dfTest = utils.change_history(dfTest, activity_name)
     write(info, folders['model']['data_info'])
     write(dfTrain, folders['model']['dfTrain'])
-    write(dfTrain_without_valid, folders['model']['dfTrain_without_valid'])
-    write(dfValid, folders['model']['dfValid'])
     write(dfTest, folders['model']['dfTest'])
 
 
@@ -195,7 +187,7 @@ def balance_weights(y_train, params):
 
 
 @log_it
-def generate_train_and_test_sets(df, target_column, target_column_name, event_level, column_type, override,
+def generate_train_test_sets(df, target_column, target_column_name, event_level, column_type, override,
                                  case_id_name, df_completed_cases, activity_name):
     # reattach predict column before splitting
     print('df',df)
@@ -208,76 +200,23 @@ def generate_train_and_test_sets(df, target_column, target_column_name, event_le
     categorical_features = df.iloc[:, 1:-1].select_dtypes(exclude=np.number).columns
     df[categorical_features] = df[categorical_features].astype(str)
 
-    if (column_type == "Categorical") and ((len(df[df[target_column_name] == 0][case_id_name].unique()) /
-                                            len(df[df[target_column_name] == 1][case_id_name].unique())) > 10):
-        unbalanced = True
-    else:
-        unbalanced = False
+    mask_test = df['caseid'].str.endswith("_test")
+    dfTrain = df[~mask_test].copy()
+    dfTest = df[mask_test].copy()
+    # Split caseid values back into original and test versions
+    dfTest['caseid'] = dfTest['caseid'].str.replace("_test", "")
 
-    # DO NOT REMOVE CASE, IT IS NEEDED IF WE WANT TO COMPARE DIFFERENT ALGORITHMS ON THE TEST SET
-    # if trained model exists just pick the previously chosen case indexes
-    if ("train_cases" in read(folders['model']['data_info'])) or (exists(folders['model']['model'])
-                                                                  and override is False):
-        train_cases = read(folders['model']['data_info'])["train_cases"]
-        print("Reloaded train cases")
-        # dfTrain = df[df[case_id_name].isin(train_cases)]
-        dfTest = df[~df[case_id_name].isin(train_cases)]
-    else:
-        # we consider the class unbalanced when the class is 1/10 or lower (equally distribute the 1 targets)
-        if unbalanced:
-            number_train_cases = round((third_quartile + second_quartile) / 2)
-            # 50% of cases_1 go in train, 50% in test
-            cases_0 = df[df[target_column_name] == 0][case_id_name].unique()
-            cases_1 = df[df[target_column_name] == 1][case_id_name].unique()
-            # if there is at least a 1 in the case (cases_1) then do not include it in cases_0
-            cases_0 = cases_0[~np.isin(cases_0, cases_1)]
-            number_train_cases_1 = round(len(cases_1) / 2)
-            number_train_cases_0 = number_train_cases - number_train_cases_1
-            train_cases_0 = np.random.choice(cases_0, size=number_train_cases_0, replace=False)
-            train_cases_1 = np.random.choice(cases_1, size=number_train_cases_1, replace=False)
-            train_cases = np.append(train_cases_0, train_cases_1)
-            dfTest = df[~df[case_id_name].isin(train_cases)]
-
-        else:
-            # take cases for training in random order (the seed is fixed for replicability)
-            cases = df[case_id_name].unique()
-            number_train_cases = round((third_quartile + second_quartile) / 2)
-            train_cases = np.random.choice(cases, size=number_train_cases, replace=False)
-            # dfTrain = df[df[case_id_name].isin(train_cases)]
-            dfTest = df[~df[case_id_name].isin(train_cases)]
-    df_completed_cases = df_completed_cases.loc[df_completed_cases['CASE ID'].isin(dfTest[case_id_name].unique()), :]
-    df_completed_cases.to_csv(folders['results']['completed'], index=False)
-
-    # TODO: investigate reducing number of 0 examples. Investigate reducing 1 and using fraud detection algo
-    # Investigate 3 models in parallel trained on balanced datasets
-    # in that case how do we cope with the parameters and the grid_search?
-
-    if unbalanced:
-        # The 1 targets should be distributed proportionally also between validation and train
-        if ("train_cases" in read(folders['model']['data_info'])):
-            dfTrain = df[df[case_id_name].isin(train_cases)]
-            train_cases_0 = dfTrain.loc[dfTrain[target_column_name] == 0, case_id_name].unique()
-            train_cases_1 = dfTrain.loc[dfTrain[target_column_name] == 1, case_id_name].unique()
-            train_cases_0 = train_cases_0[~np.isin(train_cases_0, train_cases_1)]
-        valid_cases_0 = np.random.choice(train_cases_0, size=int(len(train_cases_0) / 100 * 20), replace=False)
-        valid_cases_1 = np.random.choice(train_cases_1, size=int(len(train_cases_1) / 100 * 20), replace=False)
-        valid_cases = np.append(valid_cases_0, valid_cases_1)
-    else:
-        valid_cases = np.random.choice(train_cases, size=int(len(train_cases) / 100 * 20), replace=False)
-    dfValid = df[df[case_id_name].isin(valid_cases)]
-    dfTrain_without_valid = df[df[case_id_name].isin(train_cases) & ~df[case_id_name].isin(valid_cases)]
-    dfTrain = dfTrain_without_valid.append(dfValid, ignore_index=True)
-    dfTrain = pd.read_csv(r'C:\Users\19wuj\PycharmProjects\CoDi\tabular_datasets\diffu\PurchasingExample_0.2\resource_evaluation\resource_train_sample.csv')
-    dfTest = pd.read_csv(r'C:\Users\19wuj\PycharmProjects\CoDi\tabular_datasets\diffu\PurchasingExample_0.2\resource_evaluation\resource_test.csv')
-    print('train',dfTrain)
-    print('test',dfTest)
+    # dfTrain = pd.read_csv(r'C:\Users\19wuj\PycharmProjects\CoDi\tabular_datasets\diffu\PurchasingExample_0.2\resource_evaluation\resource_train_sample.csv')
+    # dfTest = pd.read_csv(r'C:\Users\19wuj\PycharmProjects\CoDi\tabular_datasets\diffu\PurchasingExample_0.2\resource_evaluation\resource_test.csv')
+    print('train', dfTrain)
+    print('test', dfTest)
 
     # if unbalanced: #leave this if you want to balance the num of the targets
     #     #at this point you can balance the number of the targets
     #     dfTrain, dfTrain_without_valid, dfValid = balance_examples_target_column(df, case_id_name, train_cases_0, train_cases_1)
 
     if not exists(folders['model']['model']) or override:
-        save_column_information_for_real_predictions(dfTrain, dfTrain_without_valid, dfTest, dfValid, train_cases,
+        save_column_information_for_real_predictions(dfTrain, dfTest,
                                                      event_level, target_column_name, column_type, categorical_features,
                                                      activity_name)
 
@@ -288,12 +227,12 @@ def fit_model(column_type, history, case_id_name, activity_name, experiment_name
     categorical_features = info["categorical_features"]
     column_types = info["column_types"]
 
-    X_train_without_valid = read(folders['model']['dfTrain_without_valid'], dtype=column_types).iloc[:, 1:-1]
-    y_train_without_valid = read(folders['model']['dfTrain_without_valid'], dtype=column_types).iloc[:, -1]
     X_train = read(folders['model']['dfTrain'], dtype=column_types).iloc[:, 1:-1]
     y_train = read(folders['model']['dfTrain'], dtype=column_types).iloc[:, -1]
-    X_valid = read(folders['model']['dfValid'], dtype=column_types).iloc[:, 1:-1]
-    y_valid = read(folders['model']['dfValid'], dtype=column_types).iloc[:, -1]
+    X_train_without_valid = None # only for our experiments, don't need balancing
+    y_train_without_valid = None
+    X_valid = None
+    y_valid = None
 
     params = {
         'depth': 10,
@@ -480,7 +419,7 @@ def prepare_data_for_ml_model_and_predict(df, target_column, target_column_name,
                                           pred_attributes, model_type, mean_events, mean_reference_target, history,
                                           df_completed_cases, case_id_name, grid, shap):
 
-    generate_train_and_test_sets(df, target_column, target_column_name, event_level, column_type, override,
+    generate_train_test_sets(df, target_column, target_column_name, event_level, column_type, override,
                                  case_id_name, df_completed_cases, activity_name=activity_column_name)
 
     if grid is True:
